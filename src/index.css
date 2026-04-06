@@ -1,10 +1,17 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #F97316;
+  --color-primary: #f97316; /* 오렌지 포인트 컬러 */
   --color-primary-foreground: #ffffff;
 }
 
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color-scheme: dark; /* 다크모드 강제 적용 */
+}
+
 body {
-  @apply bg-zinc-950 text-white;
+  @apply bg-zinc-950 text-zinc-50; /* 배경을 검은색으로, 글자를 밝게 */
+  margin: 0;
+  min-height: 100vh;
 }
