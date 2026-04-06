@@ -1,18 +1,16 @@
 import { useState, useEffect } from "react"
-import { ExternalLink, RefreshCw, Settings2, Plus, X, Star, BookmarkCheck } from "lucide-react"
+import { ExternalLink, RefreshCw, Settings2, Plus, X, Star } from "lucide-react"
 
 export function NewsFilter() {
   const [news, setNews] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
-  // 1. 키워드 관리 상태 (내 마음대로 수정/삭제/추가)
   const [keywords, setKeywords] = useState<string[]>(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem("news-keywords") : null
     return saved ? JSON.parse(saved) : ["비트코인", "BTC", "이더리움", "ETH", "솔라나", "리플"]
   })
   
-  // 2. 북마크(저장) 상태
   const [bookmarks, setBookmarks] = useState<any[]>(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem("news-bookmarks") : null
     return saved ? JSON.parse(saved) : []
@@ -27,7 +25,6 @@ export function NewsFilter() {
     setError(null)
     try {
       const response = await fetch('/api/news')
-      if (!response.ok) throw new Error("뉴스를 가져오지 못했습니다.")
       const data = await response.json()
       setNews(data.news || [])
     } catch (err) {
@@ -38,12 +35,9 @@ export function NewsFilter() {
   }
 
   useEffect(() => { fetchNews() }, [])
-
-  // 데이터 저장 (키워드 & 북마크)
   useEffect(() => { localStorage.setItem("news-keywords", JSON.stringify(keywords)) }, [keywords])
   useEffect(() => { localStorage.setItem("news-bookmarks", JSON.stringify(bookmarks)) }, [bookmarks])
 
-  // 북마크 추가/삭제 함수
   const toggleBookmark = (item: any) => {
     const isExist = bookmarks.find(b => b.url === item.url)
     if (isExist) {
@@ -53,16 +47,22 @@ export function NewsFilter() {
     }
   }
 
-  // 필터링 로직 (북마크 탭 추가)
+  // ⭐ 핵심: 띄어쓰기 무시 필터링 로직
   const filteredNews = activeTab === "BOOKMARKS" 
     ? bookmarks
     : activeTab === "ALL" 
       ? news 
-      : news.filter((item: any) => item.title.toLowerCase().includes(activeTab.toLowerCase()))
+      : news.filter((item: any) => {
+          // 1. 뉴스 제목에서 공백 제거 + 소문자 변환
+          const normalizedTitle = item.title.replace(/\s+/g, '').toLowerCase();
+          // 2. 검색 키워드에서 공백 제거 + 소문자 변환
+          const normalizedKeyword = activeTab.replace(/\s+/g, '').toLowerCase();
+          
+          return normalizedTitle.includes(normalizedKeyword);
+        })
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-6 text-zinc-100">
-      {/* 헤더 */}
       <div className="mb-8 flex items-start justify-between">
         <div>
           <h2 className="text-3xl font-bold text-orange-500 mb-1 italic">Mokseo Insights</h2>
@@ -78,7 +78,6 @@ export function NewsFilter() {
         </div>
       </div>
 
-      {/* 탭 리스트 */}
       <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
         <button 
           onClick={() => setActiveTab("ALL")}
@@ -100,7 +99,6 @@ export function NewsFilter() {
         ))}
       </div>
 
-      {/* 뉴스 리스트 */}
       <div className="space-y-4 pb-24">
         {isLoading && activeTab !== "BOOKMARKS" ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -109,7 +107,7 @@ export function NewsFilter() {
           </div>
         ) : filteredNews.length === 0 ? (
           <div className="text-center py-20 text-zinc-600 border border-zinc-900 rounded-3xl border-dashed">
-            {activeTab === "BOOKMARKS" ? "아직 저장된 뉴스가 없습니다. 별 아이콘을 눌러보세요!" : "해당 키워드에 맞는 뉴스가 없습니다."}
+            {activeTab === "BOOKMARKS" ? "저장된 뉴스가 없습니다." : `"${activeTab}" 관련 뉴스가 없습니다.`}
           </div>
         ) : (
           filteredNews.map((item: any, i: number) => {
@@ -120,10 +118,7 @@ export function NewsFilter() {
                   <span className="text-[10px] uppercase tracking-widest text-orange-500 font-black bg-orange-500/10 px-2 py-1 rounded">Flash News</span>
                   <div className="flex items-center gap-4">
                     <span className="text-xs text-zinc-600 font-medium">{item.timestamp}</span>
-                    <button 
-                      onClick={() => toggleBookmark(item)}
-                      className={`transition-colors hover:scale-110 active:scale-95 ${isBookmarked ? 'text-yellow-500' : 'text-zinc-700 hover:text-zinc-400'}`}
-                    >
+                    <button onClick={() => toggleBookmark(item)} className={`transition-colors ${isBookmarked ? 'text-yellow-500' : 'text-zinc-700 hover:text-zinc-400'}`}>
                       <Star className="size-5" fill={isBookmarked ? "currentColor" : "none"} />
                     </button>
                   </div>
@@ -140,12 +135,11 @@ export function NewsFilter() {
         )}
       </div>
 
-      {/* 키워드 설정 모달 */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-[40px] w-full max-w-md shadow-2xl">
+          <div className="bg-zinc-950 border border-zinc-800 p-8 rounded-[40px] w-full max-w-md">
             <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-bold">관심 키워드</h3>
+              <h3 className="text-2xl font-bold">키워드 관리</h3>
               <button onClick={() => setIsSettingsOpen(false)} className="p-2 hover:bg-zinc-900 rounded-full"><X /></button>
             </div>
             <div className="flex gap-2 mb-8">
@@ -159,15 +153,14 @@ export function NewsFilter() {
               />
               <button onClick={() => { if(newKeyword && !keywords.includes(newKeyword)) { setKeywords([...keywords, newKeyword]); setNewKeyword(""); } }} className="bg-orange-500 px-5 rounded-2xl font-bold"><Plus /></button>
             </div>
-            <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto pr-2">
+            <div className="flex flex-wrap gap-2 max-h-60 overflow-y-auto">
               {keywords.map(kw => (
-                <div key={kw} className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-3">
-                  {kw} 
-                  <X className="size-4 cursor-pointer text-zinc-600 hover:text-red-500" onClick={() => setKeywords(keywords.filter(k => k !== kw))} />
+                <div key={kw} className="bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl text-sm flex items-center gap-3">
+                  {kw} <X className="size-4 cursor-pointer text-zinc-600 hover:text-red-500" onClick={() => setKeywords(keywords.filter(k => k !== kw))} />
                 </div>
               ))}
             </div>
-            <button onClick={() => setIsSettingsOpen(false)} className="w-full mt-8 bg-white text-zinc-950 py-4 rounded-2xl font-black hover:bg-orange-500 transition-colors">적용 완료</button>
+            <button onClick={() => setIsSettingsOpen(false)} className="w-full mt-8 bg-white text-zinc-950 py-4 rounded-2xl font-black transition-colors">적용 완료</button>
           </div>
         </div>
       )}
