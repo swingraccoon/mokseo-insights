@@ -3,50 +3,54 @@ import * as cheerio from 'cheerio';
 
 export default async function handler(req: any, res: any) {
   try {
-    // 오직 코인니스 메인 뉴스 페이지만 타겟팅합니다.
     const url = 'https://coinness.com/news';
     
     const { data } = await axios.get(url, {
       headers: { 
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+        'Cache-Control': 'no-cache'
       },
-      timeout: 10000 
+      timeout: 15000 
     });
 
     const $ = cheerio.load(data);
     const news: any[] = [];
 
-    // 코인니스 속보 아이템들을 정밀하게 타겟팅합니다.
-    // 보통 h3 태그에 제목이 들어있고, 그 부모 요소에 링크가 있습니다.
+    // 코인니스의 뉴스 제목은 보통 h3 태그에 들어있습니다.
+    // 클래스 이름이 수시로 바뀌어도 h3는 잘 안 바뀌기 때문에 h3를 직접 공략합니다.
     $('h3').each((_, el) => {
       const title = $(el).text().trim();
-      // 가장 가까운 링크(a) 태그를 찾습니다.
-      const linkWrap = $(el).closest('a');
-      const href = linkWrap.attr('href');
+      const link = $(el).closest('a').attr('href');
       
-      // 시간 정보 추출 (h3 주변의 span이나 div에서 시간을 찾음)
-      const timeTag = $(el).parent().find('span').first().text().trim() || "속보";
-      
-      if (title && title.length > 5) {
+      // 시간 정보를 찾기 위해 제목 주변의 텍스트를 탐색합니다.
+      const timeStr = $(el).parent().find('span').first().text().trim() || "최신";
+
+      if (title && title.length > 5) { // 너무 짧은 광고성 문구 제외
         news.push({
-          title: title,
-          timestamp: timeTag,
-          url: href ? `https://coinness.com${href}` : 'https://coinness.com/news'
+          title,
+          timestamp: timeStr,
+          url: link ? `https://coinness.com${link}` : 'https://coinness.com/news'
         });
       }
     });
 
-    // 중복 제거 및 최신순 정렬 (최대 30개)
-    const uniqueNews = Array.from(new Set(news.map(a => a.url)))
-      .map(url => news.find(a => a.url === url))
-      .slice(0, 30);
+    // 만약 코인니스에서 실패했다면 예비용으로 구글 뉴스에서 코인니스 소식만 긁어옵니다. (보험)
+    if (news.length === 0) {
+      const fallback = await axios.get('https://news.google.com/rss/search?q=coinness&hl=ko&gl=KR&ceid=KR:ko');
+      const $rss = cheerio.load(fallback.data, { xmlMode: true });
+      $rss('item').each((_, el) => {
+        news.push({
+          title: $rss(el).find('title').text().replace(" - 코인니스", ""),
+          timestamp: "실시간",
+          url: $rss(el).find('link').text()
+        });
+      });
+    }
 
-    res.status(200).json({ news: uniqueNews });
+    res.status(200).json({ news: news.slice(0, 30) });
 
   } catch (error) {
-    console.error("코인니스 로드 에러:", error);
-    res.status(500).json({ news: [], error: "코인니스 데이터를 가져오지 못했습니다." });
+    res.status(500).json({ news: [], error: "데이터 연결 실패" });
   }
 }
