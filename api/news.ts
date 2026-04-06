@@ -2,52 +2,41 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 
 export default async function handler(req: any, res: any) {
-  const { q } = req.query;
-  const searchTerm = q && q !== 'ALL' && q !== 'BOOKMARKS' ? q : '';
-
   try {
-    let news: any[] = [];
+    const url = 'https://coinness.com/news';
+    const { data } = await axios.get(url, {
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
 
-    if (searchTerm) {
-      // ⭐ 핵심: 최근 7일(7d) 동안의 코인니스 뉴스를 검색하도록 요청합니다.
-      const searchUrl = `https://news.google.com/rss/search?q=site:coinness.com+${encodeURIComponent(searchTerm)}+when:7d&hl=ko&gl=KR&ceid=KR:ko`;
-      const { data } = await axios.get(searchUrl);
-      const $rss = cheerio.load(data, { xmlMode: true });
+    const $ = cheerio.load(data);
+    const news: any[] = [];
+    
+    // 현재 날짜 구하기 (코인니스 상단 날짜 기준)
+    const dateHeader = $('div[class*="NewsList_date_header"]').first().text().trim() || "오늘";
 
-      $rss('item').each((_, el) => {
-        const title = $rss(el).find('title').text().split(' - ')[0];
-        const link = $rss(el).find('link').text();
-        const pubDate = $rss(el).find('pubDate').text();
-        
-        // 날짜를 한국인이 보기 편한 형식으로 변환
-        const date = new Date(pubDate);
-        const formattedDate = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes()}`;
+    // 코인니스 속보 아이템 하나하나를 정밀하게 훑습니다.
+    $('div[class*="NewsList_news_item"]').each((_, el) => {
+      const title = $(el).find('h3').text().trim();
+      const time = $(el).find('span[class*="NewsList_time"]').text().trim(); // 예: 17:18
+      const link = $(el).find('a').attr('href');
+      
+      // 날짜와 시간을 합쳐서 '4월 6일 17:18' 형식으로 만듭니다.
+      const fullTimestamp = dateHeader.replace("오늘, ", "") + " " + time;
 
+      if (title && title.length > 5) {
         news.push({
           title: title,
-          timestamp: formattedDate,
-          url: link
+          timestamp: fullTimestamp.trim(),
+          url: link ? `https://coinness.com${link}` : url
         });
-      });
-    } else {
-      // [전체] 탭은 기존처럼 가장 빠른 실시간 속보를 가져옵니다.
-      const { data } = await axios.get('https://coinness.com/news', { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      const $ = cheerio.load(data);
-      $('h3').each((_, el) => {
-        const title = $(el).text().trim();
-        const link = $(el).closest('a').attr('href');
-        if (title && title.length > 5) {
-          news.push({
-            title,
-            timestamp: "실시간",
-            url: link ? `https://coinness.com${link}` : 'https://coinness.com/news'
-          });
-        }
-      });
-    }
+      }
+    });
 
-    res.status(200).json({ news: news.slice(0, 50) }); // 결과 개수를 50개로 늘림
+    res.status(200).json({ news: news.slice(0, 40) }); // 최신 속보 40개 전달
+
   } catch (error) {
-    res.status(500).json({ news: [], error: "데이터 로드 실패" });
+    res.status(500).json({ news: [], error: "코인니스 연결 실패" });
   }
 }
