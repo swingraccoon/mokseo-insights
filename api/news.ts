@@ -2,47 +2,51 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 
 export default async function handler(req: any, res: any) {
-  const { q } = req.query; // 프론트에서 보낸 검색어 (예: 아서 헤이즈)
-  const searchTerm = q && q !== 'ALL' && q !== 'BOOKMARKS' ? q : '';
-
   try {
-    let url = 'https://coinness.com/news';
-    let news: any[] = [];
+    // 오직 코인니스 메인 뉴스 페이지만 타겟팅합니다.
+    const url = 'https://coinness.com/news';
+    
+    const { data } = await axios.get(url, {
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+      },
+      timeout: 10000 
+    });
 
-    if (searchTerm) {
-      // 1. 특정 키워드 검색 시: 구글 뉴스 RSS를 통해 코인니스 및 주요 매체 실시간 검색
-      const searchUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(searchTerm + " 코인")}&hl=ko&gl=KR&ceid=KR:ko`;
-      const { data } = await axios.get(searchUrl);
-      const $rss = cheerio.load(data, { xmlMode: true });
+    const $ = cheerio.load(data);
+    const news: any[] = [];
 
-      $rss('item').each((_, el) => {
+    // 코인니스 속보 아이템들을 정밀하게 타겟팅합니다.
+    // 보통 h3 태그에 제목이 들어있고, 그 부모 요소에 링크가 있습니다.
+    $('h3').each((_, el) => {
+      const title = $(el).text().trim();
+      // 가장 가까운 링크(a) 태그를 찾습니다.
+      const linkWrap = $(el).closest('a');
+      const href = linkWrap.attr('href');
+      
+      // 시간 정보 추출 (h3 주변의 span이나 div에서 시간을 찾음)
+      const timeTag = $(el).parent().find('span').first().text().trim() || "속보";
+      
+      if (title && title.length > 5) {
         news.push({
-          title: $rss(el).find('title').text().replace(/ - .*/, ""), // 매체명 제거
-          timestamp: "검색 결과",
-          url: $rss(el).find('link').text()
+          title: title,
+          timestamp: timeTag,
+          url: href ? `https://coinness.com${href}` : 'https://coinness.com/news'
         });
-      });
-    } else {
-      // 2. '전체' 탭일 시: 코인니스 최신 속보 크롤링
-      const { data } = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-      });
-      const $ = cheerio.load(data);
-      $('h3').each((_, el) => {
-        const title = $(el).text().trim();
-        const link = $(el).closest('a').attr('href');
-        if (title && title.length > 5) {
-          news.push({
-            title,
-            timestamp: "최신 속보",
-            url: link ? "https://coinness.com" + link : url
-          });
-        }
-      });
-    }
+      }
+    });
 
-    res.status(200).json({ news: news.slice(0, 20) });
+    // 중복 제거 및 최신순 정렬 (최대 30개)
+    const uniqueNews = Array.from(new Set(news.map(a => a.url)))
+      .map(url => news.find(a => a.url === url))
+      .slice(0, 30);
+
+    res.status(200).json({ news: uniqueNews });
+
   } catch (error) {
-    res.status(500).json({ news: [], error: "데이터 로드 실패" });
+    console.error("코인니스 로드 에러:", error);
+    res.status(500).json({ news: [], error: "코인니스 데이터를 가져오지 못했습니다." });
   }
 }
